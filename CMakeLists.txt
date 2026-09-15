@@ -1,8 +1,40 @@
 cmake_minimum_required(VERSION 3.13)
 
 if (NOT DEFINED BUILD_TIME_PROVIDED_VERSION)
+    # No version passed in, so derive one from git. A commit that is exactly a
+    # tag is a release (R); anything ahead of the last tag is a dev build (U).
+    # Falls back to 255.255.255 U outside a repo or before the first tag.
     set(BUILD_TIME_PROVIDED_VERSION 255.255.255)
     set(BUILD_VERSION_TYPE U)
+
+    find_package(Git QUIET)
+    if (GIT_FOUND)
+        execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE GIT_EXACT_TAG OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET RESULT_VARIABLE GIT_EXACT_RESULT)
+        execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE GIT_LAST_TAG OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET RESULT_VARIABLE GIT_LAST_RESULT)
+
+        if (GIT_EXACT_RESULT EQUAL 0)
+            set(GIT_DERIVED_VERSION "${GIT_EXACT_TAG}")
+            set(BUILD_VERSION_TYPE R)
+        elseif (GIT_LAST_RESULT EQUAL 0)
+            set(GIT_DERIVED_VERSION "${GIT_LAST_TAG}")
+        endif()
+
+        # project(VERSION) only accepts a numeric major.minor.patch, so pull
+        # that out of tags like "1.2.3" or "v1.2.3-rc1".
+        if (DEFINED GIT_DERIVED_VERSION)
+            string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+"
+                   GIT_NUMERIC_VERSION "${GIT_DERIVED_VERSION}")
+            if (GIT_NUMERIC_VERSION)
+                set(BUILD_TIME_PROVIDED_VERSION ${GIT_NUMERIC_VERSION})
+            endif()
+        endif()
+    endif()
 else ()
     set(BUILD_VERSION_TYPE R)
 endif()
