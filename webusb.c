@@ -52,6 +52,7 @@ static void webserial_task(void);
 static void handle_command(uint8_t command);
 static int handle_device_info_command(uint8_t buff[63]);
 static int handle_device_serial_id_command(uint8_t buff[63]);
+static int handle_build_name_command(uint8_t buff[63]);
 static int handle_new_rom_command(uint8_t buff[63]);
 static int handle_rom_upload_command(uint8_t buff[63]);
 static int handle_request_rom_info_command(uint8_t buff[63]);
@@ -213,6 +214,9 @@ static void handle_command(uint8_t command) {
   case 11:
     response_length = handle_rtc_upload_command(&command_buffer[1]);
     break;
+  case 12:
+    response_length = handle_build_name_command(&command_buffer[1]);
+    break;
   case 253:
     response_length = handle_device_serial_id_command(&command_buffer[1]);
     break;
@@ -254,6 +258,21 @@ static int handle_device_info_command(uint8_t buff[63]) {
   buff[9] = git_sha1 & 0xFF;
   buff[10] = git_AnyUncommittedChanges();
   return 11;
+}
+
+/* Returns the release code name as a NUL-terminated string. Kept separate
+ * from command 254 because that response is a fixed 11-byte layout the host
+ * reads at fixed offsets; appending to it would break existing clients. */
+static int handle_build_name_command(uint8_t buff[63]) {
+  const size_t len = strlen(RP2040_GB_CARTRIDGE_BUILD_NAME) + 1;
+
+  if (len > 63) {
+    return -1;
+  }
+
+  memcpy(buff, RP2040_GB_CARTRIDGE_BUILD_NAME, len);
+
+  return (int)len;
 }
 
 static int handle_device_serial_id_command(uint8_t buff[63]) {

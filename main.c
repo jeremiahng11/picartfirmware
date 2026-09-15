@@ -119,9 +119,10 @@ int main() {
 
   stdio_uart_init_full(uart0, 576000, 28, -1);
 
-  printf("Hello RP2040 JKL PiCart %d.%d.%d %s-%.7X(%s)\n",
+  printf("Hello RP2040 JKL PiCart %d.%d.%d \"%s\" %s-%.7X(%s)\n",
          RP2040_GB_CARTRIDGE_VERSION_MAJOR, RP2040_GB_CARTRIDGE_VERSION_MINOR,
-         RP2040_GB_CARTRIDGE_VERSION_PATCH, git_Branch(), git_CommitSHA1Short(),
+         RP2040_GB_CARTRIDGE_VERSION_PATCH, RP2040_GB_CARTRIDGE_BUILD_NAME,
+         git_Branch(), git_CommitSHA1Short(),
          git_AnyUncommittedChanges() ? "dirty" : "");
 
   flash_get_unique_id(g_flashSerialNumber);
@@ -305,6 +306,7 @@ struct __attribute__((packed)) SharedGameboyData {
   uint8_t versionMajor;
   uint8_t versionMinor;
   uint8_t versionPatch;
+  char buildName[12];
   struct TimePoint timePoint;
   uint8_t number_of_roms;
   char romInfo[];
@@ -328,6 +330,9 @@ void __no_inline_not_in_flash_func(runGbBootloader)(uint8_t *selectedGame,
   shared_data->versionMajor = RP2040_GB_CARTRIDGE_VERSION_MAJOR;
   shared_data->versionMinor = RP2040_GB_CARTRIDGE_VERSION_MINOR;
   shared_data->versionPatch = RP2040_GB_CARTRIDGE_VERSION_PATCH;
+  strncpy(shared_data->buildName, RP2040_GB_CARTRIDGE_BUILD_NAME,
+          sizeof(shared_data->buildName) - 1);
+  shared_data->buildName[sizeof(shared_data->buildName) - 1] = 0;
 
   breakTime(g_globalTimestamp, &shared_data->timePoint);
 

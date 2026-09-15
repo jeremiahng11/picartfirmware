@@ -38,7 +38,27 @@ if (NOT DEFINED BUILD_TIME_PROVIDED_VERSION)
 else ()
     set(BUILD_VERSION_TYPE R)
 endif()
-message("BUILD_TIME_PROVIDED_VERSION=${BUILD_TIME_PROVIDED_VERSION} BUILD_VERSION_TYPE=${BUILD_VERSION_TYPE}")
+# Release code names, keyed on major.minor. Add a line per named release;
+# anything not listed builds as "unnamed".
+set(BUILD_NAMES
+    "1.0:Pico"
+    "1.1:Latte"
+    "1.2:Wasp"
+)
+
+string(REGEX MATCH "^[0-9]+\\.[0-9]+" BUILD_VERSION_SERIES
+       "${BUILD_TIME_PROVIDED_VERSION}")
+set(BUILD_NAME "unnamed")
+foreach(_entry IN LISTS BUILD_NAMES)
+    string(REPLACE ":" ";" _parts "${_entry}")
+    list(GET _parts 0 _series)
+    list(GET _parts 1 _name)
+    if (_series STREQUAL BUILD_VERSION_SERIES)
+        set(BUILD_NAME "${_name}")
+    endif()
+endforeach()
+
+message("BUILD_TIME_PROVIDED_VERSION=${BUILD_TIME_PROVIDED_VERSION} BUILD_VERSION_TYPE=${BUILD_VERSION_TYPE} BUILD_NAME=${BUILD_NAME}")
 
 string(TIMESTAMP BUILD_TIMESTAMP "%s" UTC)
 

@@ -86,6 +86,7 @@ struct SharedGameboyData {
   uint8_t versionMajor;
   uint8_t versionMinor;
   uint8_t versionPatch;
+  char buildName[12];
   struct TimePoint timePoint;
   uint8_t number_of_roms;
   char rom_names[];
@@ -333,6 +334,8 @@ uint8_t drawscreenSystemInfo(void) {
     set_bkg_tiles(0, 0, 20, 18, giraffe_4color_map);
     gotoxy(0, 0);
     printf("***   Sysinfo    ***");
+    gotoxy(0, 14);
+    printf("\"%s\"", s_sharedData->buildName);
     gotoxy(0, 15);
     printf("JKL PiCart");
     gotoxy(0, 16);
