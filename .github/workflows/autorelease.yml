@@ -1,0 +1,77 @@
+# Every push to main cuts the next patch release: 1.0.1 -> 1.0.2 -> ... -> 1.0.9
+# -> 1.1.0. Ten patches per minor, and each minor carries its own code name
+# (see BUILD_NAMES in CMakeLists.txt), so a series rolls over to the next name
+# once it runs out of patch numbers.
+#
+# This job tags, builds and releases in one place on purpose: a tag pushed with
+# GITHUB_TOKEN does not trigger other workflows, so release.yml would never fire
+# for a tag created here. release.yml still handles tags pushed by hand.
+name: Auto release on push
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  BUILD_TYPE: Release
+
+permissions:
+  contents: write
+
+jobs:
+  autorelease:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    container:
+      image: shilga/raspberry-pi-pico-gbdk-docker:v0.4
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # need the full tag history to work out the next version
+
+    - name: Work out the next version
+      id: version
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0")
+        MAJ=${LATEST%%.*}; REST=${LATEST#*.}; MIN=${REST%%.*}; PAT=${REST#*.}
+        PAT=$((PAT + 1))
+        if [ "$PAT" -gt 9 ]; then MIN=$((MIN + 1)); PAT=0; fi
+        NEXT="$MAJ.$MIN.$PAT"
+        echo "Latest tag $LATEST -> next $NEXT"
+        echo "next=$NEXT" >> $GITHUB_OUTPUT
+
+    - name: Configure CMake
+      run: |
+        cmake --fresh -B "$GITHUB_WORKSPACE/build" \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DBUILD_TIME_PROVIDED_VERSION=${{ steps.version.outputs.next }}
+
+    - name: Build
+      run: cmake --build "$GITHUB_WORKSPACE/build" --config ${{ env.BUILD_TYPE }}
+
+    - name: Tag the release
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "${{ steps.version.outputs.next }}" \
+          -m "${{ steps.version.outputs.next }}"
+        git push origin "${{ steps.version.outputs.next }}"
+
+    - name: Package artifacts
+      run: |
+        cd "$GITHUB_WORKSPACE/build"
+        tar cvzf "rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz" \
+          *.bin *.elf *.elf.map *.hex *.uf2
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        prerelease: false
+        draft: false
+        tag_name: ${{ steps.version.outputs.next }}
+        name: ${{ steps.version.outputs.next }}
+        files: "${{ github.workspace }}/build/*.tgz"
