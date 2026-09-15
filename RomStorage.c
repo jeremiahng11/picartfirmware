@@ -96,6 +96,14 @@ static int readRomInfoFile(lfs_file_t *file) {
     _romInfoFile.speedSwitchBank = 0xFFFFU;
   }
 
+  /* numBanks comes from the stored file. Reject anything that would read
+   * past the end of banks[] (and of g_loadedRomBanks[] in the callers). */
+  if ((_romInfoFile.numBanks == 0) ||
+      (_romInfoFile.numBanks > MAX_BANKS_PER_ROM)) {
+    printf("Invalid bank count %u in ROM info file\n", _romInfoFile.numBanks);
+    return -1;
+  }
+
   lfs_err = lfs_file_read(_lfs, file, &_romInfoFile.banks,
                           _romInfoFile.numBanks * sizeof(uint16_t));
   if (lfs_err != _romInfoFile.numBanks * sizeof(uint16_t)) {
@@ -223,6 +231,15 @@ int RomStorage_StartNewRomTransfer(uint16_t num_banks, uint16_t speedSwitchBank,
 
   if ((num_banks + _usedBanks) > MAX_BANKS) {
     printf("Not enough free banks for new ROM\n");
+    return -1;
+  }
+
+  /* num_banks arrives over USB. MAX_BANKS (888) exceeds the per-ROM array
+   * size, so bound it separately or the allocation loop below writes past
+   * the end of _romInfoFile.banks[]. 512 banks is also the largest a real
+   * cartridge ROM can be (8MB). */
+  if ((num_banks == 0) || (num_banks > MAX_BANKS_PER_ROM)) {
+    printf("Invalid bank count %u for new ROM\n", num_banks);
     return -1;
   }
 
