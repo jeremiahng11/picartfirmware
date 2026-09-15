@@ -334,7 +334,7 @@ uint8_t drawscreenSystemInfo(void) {
     gotoxy(0, 0);
     printf("***   Sysinfo    ***");
     gotoxy(0, 15);
-    printf("Croco Cartridge");
+    printf("JKL PiCart");
     gotoxy(0, 16);
     printf("Ver %hu.", (uint8_t)s_sharedData->versionMajor);
     printf("%hu.", (uint8_t)s_sharedData->versionMinor);

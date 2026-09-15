@@ -6,7 +6,7 @@ set(RGBLINK rgblink)
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/gbSaveGameVBlankHook.o
     DEPENDS gbSaveGameVBlankHook.asm
-    COMMAND ${RGBASM} -L -o ${CMAKE_CURRENT_BINARY_DIR}/gbSaveGameVBlankHook.o gbSaveGameVBlankHook.asm
+    COMMAND ${RGBASM} -o ${CMAKE_CURRENT_BINARY_DIR}/gbSaveGameVBlankHook.o gbSaveGameVBlankHook.asm
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

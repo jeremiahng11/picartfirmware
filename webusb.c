@@ -40,7 +40,7 @@ static bool web_serial_connected = false;
 
 static uint8_t command_buffer[64];
 
-#define URL "jkl.rp2040.sg"
+#define URL "cart.jeremiah.sg"
 
 const tusb_desc_webusb_url_t desc_url = {.bLength = 3 + sizeof(URL) - 1,
                                          .bDescriptorType =
@@ -169,7 +169,7 @@ static void handle_command(uint8_t command) {
   int response_length = 0;
 
   switch (command) {
-  case 1:
+  case 1: {
     uint16_t usedBanks = RomStorage_GetNumUsedBanks();
     command_buffer[1] = g_numRoms;
     command_buffer[2] = (usedBanks >> 8) & 0xFF;
@@ -178,6 +178,7 @@ static void handle_command(uint8_t command) {
     command_buffer[5] = MAX_BANKS & 0xFF;
     response_length = 5;
     break;
+  }
   case 2:
     response_length = handle_new_rom_command(&command_buffer[1]);
     break;
@@ -225,6 +226,9 @@ static void handle_command(uint8_t command) {
   }
 
   if (response_length < 0) {
+    /* Drop any partial payload so a short read cannot desynchronise the
+     * command stream for every command that follows. */
+    tud_vendor_read_flush();
     command_buffer[0] = 0xFF;
     response_length = 1;
   } else {

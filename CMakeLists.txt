@@ -82,6 +82,7 @@ target_link_libraries(${PROJECT_NAME}
     hardware_gpio
     hardware_pio
     hardware_clocks
+    hardware_watchdog
     littlefs-lib
     tinyusb_device
     tinyusb_board

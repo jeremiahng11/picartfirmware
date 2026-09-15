@@ -24,7 +24,9 @@
 #include <hardware/structs/ssi.h>
 #include <hardware/sync.h>
 #include <hardware/timer.h>
+#include <hardware/structs/watchdog.h>
 #include <hardware/vreg.h>
+#include <hardware/watchdog.h>
 #include <pico/bootrom.h>
 #include <pico/platform.h>
 #include <pico/stdio.h>
@@ -117,7 +119,7 @@ int main() {
 
   stdio_uart_init_full(uart0, 576000, 28, -1);
 
-  printf("Hello RP2040 Croco Cartridge %d.%d.%d %s-%.7X(%s)\n",
+  printf("Hello RP2040 JKL PiCart %d.%d.%d %s-%.7X(%s)\n",
          RP2040_GB_CARTRIDGE_VERSION_MAJOR, RP2040_GB_CARTRIDGE_VERSION_MINOR,
          RP2040_GB_CARTRIDGE_VERSION_PATCH, git_Branch(), git_CommitSHA1Short(),
          git_AnyUncommittedChanges() ? "dirty" : "");
@@ -352,7 +354,15 @@ void __no_inline_not_in_flash_func(runGbBootloader)(uint8_t *selectedGame,
 
   gpio_put(PIN_GB_RESET, 0); // let the gameboy start (deassert reset line)
 
+  /* Guard only the menu/USB phase. The per-MBC service loops that run once a
+   * game is loaded are cycle-critical and run with interrupts disabled, so the
+   * watchdog is switched off again before the game starts. 8s comfortably
+   * exceeds the longest flash erase/program a ROM transfer performs, and
+   * littlefs is power-loss resilient if it ever does fire mid-write. */
+  watchdog_enable(8000, true);
+
   while (*selectedGame == 0xFF) {
+    watchdog_update();
     if (!pio_sm_is_rx_fifo_empty(pio1, SMC_GB_MAIN)) {
       cartridgeIsInGameboy = true;
       uint32_t rdAndAddr = *((uint32_t *)(&pio1->rxf[SMC_GB_MAIN]));
@@ -396,6 +406,9 @@ void __no_inline_not_in_flash_func(runGbBootloader)(uint8_t *selectedGame,
   }
 
   usb_shutdown();
+
+  /* Leave the cycle-critical game loops unguarded. */
+  hw_clear_bits(&watchdog_hw->ctrl, WATCHDOG_CTRL_ENABLE_BITS);
 
   g_globalTimestamp = makeTime(&shared_data->timePoint);
   g_hardwareSupportsDoubleSpeed = ram[0x1003] == 0x11;

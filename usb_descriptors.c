@@ -176,10 +176,10 @@ TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "Incorrect size");
 char const* string_desc_arr [] =
 {
   (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
-  "x-pantion",                     // 1: Manufacturer
-  "Croco Cartridge",              // 2: Product
-  g_serialNumberString,           // 3: Serials, should use chip ID
-  "TinyUSB WebUSB"               // 5: Vendor Interface
+  "JKL",                          // 1: Manufacturer
+  "JKL PiCart",              // 2: Product
+  g_serialNumberString,           // 3: Serial, from flash unique ID
+  "JKL PiCart WebUSB"            // 4: Vendor Interface
 };
 
 static uint16_t _desc_str[32];
