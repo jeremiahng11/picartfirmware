@@ -736,17 +736,27 @@ void __no_inline_not_in_flash_func(storeCurrentlyRunningSaveGame)() {
   setSsi32bit();
   __compiler_memory_barrier();
 
-  storeSaveRamToFile(&g_loadedRomInfo);
-  if (_hasRtc) {
-    storeRtcToFile(&g_loadedRomInfo);
+  int save_err = storeSaveRamToFile(&g_loadedRomInfo);
+  if (_hasRtc && (save_err == 0)) {
+    save_err = storeRtcToFile(&g_loadedRomInfo);
   }
 
-  ws2812b_setRgb(0, 0x10, 0);
+  if (save_err == 0) {
+    ws2812b_setRgb(0, 0x10, 0); // green: the save is on flash
+  } else {
+    /* Leave the LED red. Red already means "there is unsaved data", which is
+     * exactly the situation, and the user must not be told otherwise. */
+    ws2812b_setRgb(0x15, 0, 0);
+  }
 
   setSsi8bit();
   __compiler_memory_barrier();
 
-  _ramDirty = false;
+  /* Only forget the dirty RAM if it actually reached flash, so a later
+   * attempt still has a reason to run. */
+  if (save_err == 0) {
+    _ramDirty = false;
+  }
 
   pio_set_sm_mask_enabled(pio1, (1 << SMC_GB_MAIN), true);
 }

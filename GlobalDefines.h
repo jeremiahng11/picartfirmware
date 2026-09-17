@@ -85,10 +85,10 @@ extern struct RomInfo g_loadedRomInfo;
 void setSsi8bit();
 void setSsi32bit();
 void loadDoubleSpeedPio(uint16_t bank, uint16_t addr);
-void storeSaveRamToFile(const struct RomInfo *shortRomInfo);
+int storeSaveRamToFile(const struct RomInfo *shortRomInfo);
 void restoreSaveRamFromFile(const struct RomInfo *shortRomInfo);
 int restoreRtcFromFile(const struct RomInfo *romInfo);
-void storeRtcToFile(const struct RomInfo *romInfo);
+int storeRtcToFile(const struct RomInfo *romInfo);
 
 struct __attribute__((packed)) GbRtc {
   uint8_t seconds;

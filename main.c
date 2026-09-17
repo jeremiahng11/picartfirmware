@@ -537,9 +537,14 @@ void restoreSaveRamFromFile(const struct RomInfo *romInfo) {
   }
 }
 
-void storeSaveRamToFile(const struct RomInfo *romInfo) {
+/* Returns 0 once the savegame is safely on flash, negative otherwise. The
+ * caller must not report success until this says so: the green LED is the
+ * only confirmation the user gets that their save was written. */
+int storeSaveRamToFile(const struct RomInfo *romInfo) {
   lfs_file_t file;
   int lfs_err;
+  int close_err;
+  lfs_size_t expected;
   struct lfs_file_config fileconfig = {.buffer = _lfsFileBuffer};
   char filenamebuffer[40] = "saves/";
   strcpy(&filenamebuffer[strlen(filenamebuffer)],
@@ -551,21 +556,42 @@ void storeSaveRamToFile(const struct RomInfo *romInfo) {
 
   if (lfs_err != LFS_ERR_OK) {
     printf("Error opening file %d\n", lfs_err);
+    return lfs_err;
   }
 
   if (romInfo->mbc == 2) {
+    expected = GB_MBC2_RAM_SIZE;
     lfs_err = lfs_file_write(&_lfs, &file,
                              &ram_memory[GB_RAM_BANK_SIZE - GB_MBC2_RAM_SIZE],
                              GB_MBC2_RAM_SIZE);
   } else {
-    lfs_err = lfs_file_write(&_lfs, &file, ram_memory,
-                             romInfo->numRamBanks * GB_RAM_BANK_SIZE);
+    expected = romInfo->numRamBanks * GB_RAM_BANK_SIZE;
+    lfs_err = lfs_file_write(&_lfs, &file, ram_memory, expected);
   }
   printf("wrote %d bytes\n", lfs_err);
 
-  lfs_file_close(&_lfs, &file);
+  /* close is what flushes, so a full filesystem can surface here rather than
+   * in the write. */
+  close_err = lfs_file_close(&_lfs, &file);
+
+  if (lfs_err < 0) {
+    printf("Error writing savegame %d\n", lfs_err);
+    return lfs_err;
+  }
+
+  if ((lfs_size_t)lfs_err != expected) {
+    printf("Short savegame write: %d of %lu\n", lfs_err,
+           (unsigned long)expected);
+    return LFS_ERR_IO;
+  }
+
+  if (close_err != LFS_ERR_OK) {
+    printf("Error closing savegame %d\n", close_err);
+    return close_err;
+  }
 
   ws2812b_setRgb(0, 0x10, 0); // light up LED in green
+  return 0;
 }
 
 int restoreRtcFromFile(const struct RomInfo *romInfo) {
@@ -600,7 +626,7 @@ int restoreRtcFromFile(const struct RomInfo *romInfo) {
   return 0;
 }
 
-void storeRtcToFile(const struct RomInfo *romInfo) {
+int storeRtcToFile(const struct RomInfo *romInfo) {
   lfs_file_t file;
   int lfs_err;
   struct lfs_file_config fileconfig = {.buffer = _lfsFileBuffer};
@@ -615,6 +641,7 @@ void storeRtcToFile(const struct RomInfo *romInfo) {
 
   if (lfs_err != LFS_ERR_OK) {
     printf("Error opening file %d\n", lfs_err);
+    return lfs_err;
   } else {
     lfs_err = lfs_file_write(&_lfs, &file, (uint8_t *)&g_rtcReal.asArray[0],
                              sizeof(struct GbRtc));
@@ -630,6 +657,8 @@ void storeRtcToFile(const struct RomInfo *romInfo) {
   if (g_rtcTimestamp > g_globalTimestamp) {
     storeLastTimestampToFile(&g_rtcTimestamp);
   }
+
+  return (lfs_err < 0) ? lfs_err : 0;
 }
 
 void loadLastTimestampFromFile(uint64_t *ts) {

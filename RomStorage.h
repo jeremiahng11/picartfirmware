@@ -34,6 +34,10 @@ int RomStorage_TransferRomChunk(uint16_t bank, uint16_t chunk,
 
 uint16_t RomStorage_GetNumUsedBanks();
 
+int RomStorage_StartBankStream(uint16_t bank);
+bool RomStorage_IsBankStreamActive();
+int RomStorage_StreamBankData(const uint8_t *data, uint32_t len);
+
 int RomStorage_DeleteRom(uint8_t rom);
 
 int RomStorage_StartRamUpload(uint8_t rom);

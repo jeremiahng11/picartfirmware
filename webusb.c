@@ -53,6 +53,7 @@ static void handle_command(uint8_t command);
 static int handle_device_info_command(uint8_t buff[63]);
 static int handle_device_serial_id_command(uint8_t buff[63]);
 static int handle_build_name_command(uint8_t buff[63]);
+static int handle_start_bank_stream_command(uint8_t buff[63]);
 static int handle_new_rom_command(uint8_t buff[63]);
 static int handle_rom_upload_command(uint8_t buff[63]);
 static int handle_request_rom_info_command(uint8_t buff[63]);
@@ -75,6 +76,26 @@ void usb_run() {
 
 void webserial_task(void) {
   if (web_serial_connected) {
+    /* While a bank is streaming the endpoint carries raw ROM data, not
+     * commands, so it must not go through handle_command(). */
+    if (RomStorage_IsBankStreamActive()) {
+      uint8_t buf[CFG_TUD_VENDOR_RX_BUFSIZE];
+      uint32_t count = tud_vendor_read(buf, sizeof(buf));
+
+      if (count) {
+        int res = RomStorage_StreamBankData(buf, count);
+
+        if (res != 0) {
+          /* Complete or failed: either way the host is waiting for one ack. */
+          command_buffer[0] = (res > 0) ? 13 : 0xFF;
+          command_buffer[1] = (res > 0) ? 0 : (uint8_t)(-res);
+          tud_vendor_write(command_buffer, 2);
+          tud_vendor_flush();
+        }
+      }
+      return;
+    }
+
     if (tud_vendor_available()) {
       uint8_t buf[1];
       uint32_t count = tud_vendor_read(buf, sizeof(buf));
@@ -217,6 +238,9 @@ static void handle_command(uint8_t command) {
   case 12:
     response_length = handle_build_name_command(&command_buffer[1]);
     break;
+  case 13:
+    response_length = handle_start_bank_stream_command(&command_buffer[1]);
+    break;
   case 253:
     response_length = handle_device_serial_id_command(&command_buffer[1]);
     break;
@@ -233,8 +257,11 @@ static void handle_command(uint8_t command) {
     /* Drop any partial payload so a short read cannot desynchronise the
      * command stream for every command that follows. */
     tud_vendor_read_flush();
+    /* Byte 0 stays 0xFF so clients that only look there keep working; byte 1
+     * carries why it failed, so the host can say more than "it failed". */
     command_buffer[0] = 0xFF;
-    response_length = 1;
+    command_buffer[1] = (uint8_t)(-response_length);
+    response_length = 2;
   } else {
     command_buffer[0] = command;
     response_length += 1;
@@ -246,7 +273,7 @@ static void handle_command(uint8_t command) {
 
 static int handle_device_info_command(uint8_t buff[63]) {
   uint32_t git_sha1 = git_CommitSHA1Short();
-  buff[0] = 4; // featureStep
+  buff[0] = 5; // featureStep: 5 adds command 12 (build name)
   buff[1] = 1; // hwVersion
   buff[2] = RP2040_GB_CARTRIDGE_VERSION_MAJOR;
   buff[3] = RP2040_GB_CARTRIDGE_VERSION_MINOR;
@@ -273,6 +300,30 @@ static int handle_build_name_command(uint8_t buff[63]) {
   memcpy(buff, RP2040_GB_CARTRIDGE_BUILD_NAME, len);
 
   return (int)len;
+}
+
+/* Opens a streamed bank transfer. Everything the host sends after a successful
+ * reply here is raw bank data until the bank is full, which webserial_task
+ * acks. */
+static int handle_start_bank_stream_command(uint8_t buff[63]) {
+  uint16_t bank;
+
+  uint32_t count = tud_vendor_read(buff, 2);
+  if (count != 2) {
+    printf("wrong number of bytes for bank stream command\n");
+    return -1;
+  }
+
+  bank = (buff[0] << 8) + buff[1];
+
+  int res = RomStorage_StartBankStream(bank);
+  if (res < 0) {
+    printf("bank stream rejected %d\n", res);
+    return res;
+  }
+
+  buff[0] = 0;
+  return 1;
 }
 
 static int handle_device_serial_id_command(uint8_t buff[63]) {

@@ -273,15 +273,10 @@ int RomStorage_StartNewRomTransfer(uint16_t num_banks, uint16_t speedSwitchBank,
   printf("Allocated %d banks for new ROM %s\n", num_banks, name);
   printf("ROM uses bank %d for speed switch\n", speedSwitchBank);
 
-  for (size_t i = 0; i < num_banks; i++) {
-    uint32_t flashAddr = (_romInfoFile.banks[i] * GB_ROM_BANK_SIZE) +
-                         ROM_STORAGE_FLASH_START_ADDR;
-
-    printf("Erasing bank %d @%x\n", _romInfoFile.banks[i], flashAddr);
-    uint32_t ints = save_and_disable_interrupts();
-    flash_range_erase(flashAddr, GB_ROM_BANK_SIZE);
-    restore_interrupts(ints);
-  }
+  /* Banks are erased one at a time, immediately before each is written (see
+   * RomStorage_TransferRomChunk). Erasing the whole allocation up front
+   * blocked here for tens of seconds on a large ROM - long enough to stall
+   * USB and leave the host waiting before the first byte was even sent. */
 
   _romTransferActive = true;
   _lastTransferredChunk = 0xFFFF;
@@ -340,6 +335,7 @@ int RomStorage_TransferRomChunk(uint16_t bank, uint16_t chunk,
                          ROM_STORAGE_FLASH_START_ADDR;
     printf("Writing bank %d @%x\n", _romInfoFile.banks[bank], flashAddr);
     uint32_t ints = save_and_disable_interrupts();
+    flash_range_erase(flashAddr, GB_ROM_BANK_SIZE);
     flash_range_program(flashAddr, _bankBuffer, GB_ROM_BANK_SIZE);
     restore_interrupts(ints);
 
@@ -377,6 +373,133 @@ int RomStorage_TransferRomChunk(uint16_t bank, uint16_t chunk,
   }
 
   return 0;
+}
+
+/* Streaming upload (featureStep 5).
+ *
+ * The chunked path acks every 32 bytes, which costs one USB round trip per
+ * 32 bytes - 65536 of them for a 2MB ROM, and almost all of the upload time
+ * is latency rather than bandwidth. Streaming takes one whole bank as raw
+ * back-to-back packets and acks once, at the end.
+ *
+ * Ordering is enforced exactly as the chunked path does: banks must arrive in
+ * sequence, and a bank may only start when the previous one finished. */
+static bool _bankStreamActive = false;
+static uint16_t _streamBank = 0;
+static uint32_t _streamBytes = 0;
+
+int RomStorage_StartBankStream(uint16_t bank) {
+  if (!_romTransferActive) {
+    return -1;
+  }
+
+  if (_bankStreamActive) {
+    return -2;
+  }
+
+  if (_lastTransferredChunk != 0xFFFF) {
+    /* A chunked bank is half finished; do not interleave the two paths. */
+    return -3;
+  }
+
+  if (_lastTransferredBank == 0xFFFF) {
+    if (bank != 0) {
+      return -4;
+    }
+  } else if (bank != (uint16_t)(_lastTransferredBank + 1)) {
+    return -5;
+  }
+
+  if (bank >= _romInfoFile.numBanks) {
+    return -6;
+  }
+
+  _streamBank = bank;
+  _streamBytes = 0;
+  _bankStreamActive = true;
+
+  return 0;
+}
+
+bool RomStorage_IsBankStreamActive() { return _bankStreamActive; }
+
+/* Appends raw bank data. Returns 1 when the bank is complete and has been
+ * written to flash, 0 when more is expected, negative on error. */
+int RomStorage_StreamBankData(const uint8_t *data, uint32_t len) {
+  lfs_file_t file;
+  int lfs_err;
+
+  if (!_bankStreamActive) {
+    return -1;
+  }
+
+  if (len > (GB_ROM_BANK_SIZE - _streamBytes)) {
+    /* More than a bank's worth arrived: the host is out of step, so drop the
+     * transfer rather than run off the end of the buffer. */
+    _bankStreamActive = false;
+    return -2;
+  }
+
+  memcpy(&_bankBuffer[_streamBytes], data, len);
+  _streamBytes += len;
+
+  if (_streamBytes < GB_ROM_BANK_SIZE) {
+    return 0;
+  }
+
+  {
+    uint32_t flashAddr = (_romInfoFile.banks[_streamBank] * GB_ROM_BANK_SIZE) +
+                         ROM_STORAGE_FLASH_START_ADDR;
+    uint32_t ints = save_and_disable_interrupts();
+    flash_range_erase(flashAddr, GB_ROM_BANK_SIZE);
+    flash_range_program(flashAddr, _bankBuffer, GB_ROM_BANK_SIZE);
+    restore_interrupts(ints);
+  }
+
+  _lastTransferredBank = _streamBank;
+  _lastTransferredChunk = 0xFFFF;
+  _bankStreamActive = false;
+
+  if (_streamBank != (_romInfoFile.numBanks - 1)) {
+    return 1;
+  }
+
+  /* Last bank: write the ROM info file exactly as the chunked path does. */
+  printf("Transfer of ROM completed\n");
+
+  lfs_err = lfs_file_opencfg(_lfs, &file, _fileNameBuffer,
+                             LFS_O_WRONLY | LFS_O_CREAT | LFS_O_EXCL,
+                             &_fileconfig);
+  if (lfs_err < 0) {
+    printf("Error opening rom info %d\n", lfs_err);
+    return -3;
+  }
+
+  lfs_err = lfs_file_write(_lfs, &file, &_romInfoFile,
+                           offsetof(struct RomInfoFile, banks));
+  if (lfs_err < 0) {
+    printf("Error writing header %d\n", lfs_err);
+    return -4;
+  }
+
+  lfs_err = lfs_file_write(_lfs, &file, &_romInfoFile.banks,
+                           _romInfoFile.numBanks * sizeof(uint16_t));
+  if (lfs_err < 0) {
+    printf("Error writing bank info %d\n", lfs_err);
+    return -5;
+  }
+
+  lfs_err = lfs_file_close(_lfs, &file);
+  if (lfs_err < 0) {
+    printf("Error closing file %d\n", lfs_err);
+    return -6;
+  }
+
+  RomStorage_init(_lfs); // reinit to reload ROM info
+
+  _romTransferActive = false;
+
+  return 1;
 }
 
 uint16_t RomStorage_GetNumUsedBanks() { return _usedBanks; }
