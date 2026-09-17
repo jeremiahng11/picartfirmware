@@ -49,6 +49,9 @@ jobs:
         MAJ=${LATEST%%.*}; REST=${LATEST#*.}; MIN=${REST%%.*}; PAT=${REST#*.}
         PAT=$((PAT + 1))
         if [ "$PAT" -gt 9 ]; then MIN=$((MIN + 1)); PAT=0; fi
+        # The minor rolls at 9 too, so the series always has a code name:
+        # 1.9.9 -> 2.0.0, never 1.10.0 (BUILD_NAMES defines x.0 through x.9).
+        if [ "$MIN" -gt 9 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
         NEXT="$MAJ.$MIN.$PAT"
         echo "Latest tag $LATEST -> next $NEXT"
         echo "next=$NEXT" >> $GITHUB_OUTPUT
