@@ -23,6 +23,9 @@ on:
       - '**.ld'
       - '**/CMakeLists.txt'
       - 'cmakeHelpers/**'
+  # Lets a release be cut by hand, for when something outside the filtered
+  # paths needs to ship.
+  workflow_dispatch:
 
 env:
   BUILD_TYPE: Release
@@ -76,12 +79,10 @@ jobs:
     - name: Package artifacts
       run: |
         cd "$GITHUB_WORKSPACE/build"
-        tar cvzf "rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz" \
-          *.bin *.elf *.elf.map *.hex *.uf2
-        # The .uf2 is the only file most people need, and it is what the
-        # upgrade prompt sends them here for. Offer it without a tarball.
-        cp rp2040-gb-cartridge.uf2 \
-          "picart-${{ steps.version.outputs.next }}.uf2"
+        tar czf "rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz" *.bin *.elf *.elf.map *.hex *.uf2
+        cp rp2040-gb-cartridge.uf2 "picart-${{ steps.version.outputs.next }}.uf2"
+        echo "--- release candidates ---"
+        ls -l "rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz" "picart-${{ steps.version.outputs.next }}.uf2"
 
     - name: Release
       uses: softprops/action-gh-release@v1
@@ -93,5 +94,5 @@ jobs:
         tag_name: ${{ steps.version.outputs.next }}
         name: ${{ steps.version.outputs.next }}
         files: |
-          ${{ github.workspace }}/build/rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz
-          ${{ github.workspace }}/build/picart-${{ steps.version.outputs.next }}.uf2
+          build/rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz
+          build/picart-${{ steps.version.outputs.next }}.uf2
