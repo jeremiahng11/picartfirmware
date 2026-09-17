@@ -11,6 +11,18 @@ name: Auto release on push
 on:
   push:
     branches: [ "main" ]
+    # Only firmware sources cut a release. There are ten patch numbers per
+    # code name, so a README or workflow edit should not consume one.
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.h.in'
+      - '**.pio'
+      - '**.asm'
+      - '**.inc'
+      - '**.ld'
+      - '**/CMakeLists.txt'
+      - 'cmakeHelpers/**'
 
 env:
   BUILD_TYPE: Release
@@ -63,6 +75,10 @@ jobs:
         cd "$GITHUB_WORKSPACE/build"
         tar cvzf "rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz" \
           *.bin *.elf *.elf.map *.hex *.uf2
+        # The .uf2 is the only file most people need, and it is what the
+        # upgrade prompt sends them here for. Offer it without a tarball.
+        cp rp2040-gb-cartridge.uf2 \
+          "picart-${{ steps.version.outputs.next }}.uf2"
 
     - name: Release
       uses: softprops/action-gh-release@v1
@@ -73,4 +89,6 @@ jobs:
         draft: false
         tag_name: ${{ steps.version.outputs.next }}
         name: ${{ steps.version.outputs.next }}
-        files: "${{ github.workspace }}/build/*.tgz"
+        files: |
+          ${{ github.workspace }}/build/rp2040-gb-cartridge-${{ steps.version.outputs.next }}.tgz
+          ${{ github.workspace }}/build/picart-${{ steps.version.outputs.next }}.uf2
